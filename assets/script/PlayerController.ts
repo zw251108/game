@@ -1,4 +1,15 @@
-import {_decorator, Component, Vec3, EventMouse, input, Input, EventKeyboard, KeyCode, Animation} from 'cc';
+import {_decorator, Component
+	, Vec2
+	, Vec3
+	, EventMouse
+	, input, Input
+	, EventKeyboard, KeyCode
+	, Animation
+	, PhysicsSystem2D
+	, IPhysics2DContact
+	, RigidBody2D, ERigidBody2DType
+	, ConstantForce
+	, Contact2DType, Collider2D} from 'cc';
 
 const
     { ccclass
@@ -44,6 +55,9 @@ export class PlayerController extends Component{
 	@property(Animation)
 	BodyAnim: Animation = null;
 
+	// @property(Vec2)
+	// impulse = null;
+
 	mode = 0;   // 操作模式，0 鼠标键盘，1 键盘，2 触摸屏，3 手柄
 
 	direction = 1;  // 面向方向，0 上，1 左，2 下，3 右
@@ -55,11 +69,33 @@ export class PlayerController extends Component{
 	private _curPos: Vec3 = new Vec3();
 	private _targetPos: Vec3 = new Vec3();
 
-	moveSpeed = 400;
+	rigidBody: RigidBody2D = null
+
+	moveSpeed = 40;
 	moveTime = 0.1;
+
+	initX = 0;
+	initY = 0;
 
 	start(){
 		this.bindEvent();
+
+		// 注册单个碰撞体的回调函数
+		let collider = this.getComponent( Collider2D )
+			;
+
+		if (collider) {
+			collider.on(Contact2DType.BEGIN_CONTACT, this.onBeginContact, this);
+			collider.on(Contact2DType.END_CONTACT, this.onEndContact, this);
+		}
+
+		this.rigidBody = this.node.getComponent( RigidBody2D );
+
+		let initWorldPosition = this.node.getWorldPosition()
+			;
+
+		this.initX = initWorldPosition.x;
+		this.initY = initWorldPosition.y;
 	}
 
 	setMode(mode: number){
@@ -88,7 +124,7 @@ export class PlayerController extends Component{
 
 	onMouseEvent(event: EventMouse){
 		if( event.getButton() === 0 ){
-			this.move(0);
+			this.move( event.getUILocation() );
 		}
 		else if( event.getButton() === 2 ){
 			this.flash();
@@ -99,10 +135,22 @@ export class PlayerController extends Component{
 		let keyCode = event.keyCode
 			, op = KEY_OP_MAP[this.mode]?.[keyCode]
 			;
-
+		                    console.log(keyCode)
 		if( op ){
 			this[op?.[0]]( op?.[1] );
 		}
+	}
+
+	onBeginContact(selfCollider: Collider2D, otherCollider: Collider2D, contact: IPhysics2DContact | null){
+		// 只在两个碰撞体开始接触时被调用一次
+		this.state = '';
+		console.log('onBeginContact');
+		this.stop();
+	}
+
+	onEndContact(selfCollider: Collider2D, otherCollider: Collider2D, contact: IPhysics2DContact | null){
+		// 只在两个碰撞体结束接触时被调用一次
+		console.log('onEndContact');
 	}
 
 	moveVec3(time){
@@ -133,7 +181,7 @@ export class PlayerController extends Component{
 		return rs;
 	}
 
-    move(direction: number){
+    move(position: Vec2){
 		if( this.state ){
 			return ;
 		}
@@ -141,16 +189,73 @@ export class PlayerController extends Component{
 		this.state = 'moving';
 		this.stateTime = this.moveTime;
 
-	    this.node.getPosition( this._curPos );
-	    this.direction = direction;
+	    let curr = this.node.getPosition()
+		    , x = position.x - this.initX - curr.x
+		    , y = position.y - this.initY - curr.y
+		    , linear = new Vec2()
+	        ;
 
-		Vec3.add(this._targetPos, this._curPos, this.moveVec3( this.moveTime ));
-    }
+		if( Math.abs(x) > Math.abs(y) ){
+			if( x > 0 ){
+				this.direction = 1; // 左
+
+				linear.x = this.moveSpeed;
+			}
+			else{
+				this.direction = 3; // 右
+
+				linear.x = -this.moveSpeed;
+			}
+
+			linear.y = y / Math.abs( x ) * this.moveSpeed;
+		}
+		else{
+			if( y > 0 ){
+				this.direction = 0; // 上
+
+				linear.y = this.moveSpeed;
+			}
+			else{
+				this.direction = 2; // 下
+
+				linear.y = -this.moveSpeed;
+			}
+
+			linear.x = x / Math.abs( y ) * this.moveSpeed;
+		}
+
+		this.rigidBody.linearVelocity = linear;
+
+	    // linear.add( new Vec2(event.getUILocationX() - this.initX, event.getUILocationY() - this.initY) );
+
+	    // this.node.getPosition( this._curPos );
+	    // this.direction = direction;
+
+		// let v = this.moveVec3( this.moveTime )
+	    //     ;
+
+		// Vec3.add(this._targetPos, this._curPos, v);
+
+	    // this.rigidBody.wakeUp();
+	    // this.rigidBody.applyLinearImpulseToCenter(new Vec2(v.x, v.y), true);
+	    // console.log( this.rigidBody )
+	    // this.rigidBody.wakeUp();
+		// console.log(v.x, v.y)
+	    // this.rigidBody.linearVelocity = new Vec2(v.x, v.y)
+        // console.log(this.rigidBody.linearVelocity)
+	}
+
+	stop(){
+		this.rigidBody.linearVelocity = new Vec2(0, 0);
+		this.rigidBody.angularVelocity = 0;
+	}
 
 	skill(id: number){
 		if( this.state && this.state !== 'moving' ){    // 施放技能时会打断移动
 			return ;
 		}
+
+		this.stop();
 
 		switch( id ){
 			case 0:
@@ -182,25 +287,25 @@ export class PlayerController extends Component{
 
 	update(deltaTime: number){
 		if( this.state ){
+			console.log(deltaTime)
 			this.stateRunTime += deltaTime;
-
-			if( this.stateRunTime >= this.stateTime ){
-				this.state = '';
-				this.stateRunTime = 0;
-			}
 
 			switch( this.state ){
 				case 'moving':
 					if( this.stateRunTime >= this.stateTime ){
-						this.node.setPosition( this._targetPos );
+						// this.node.setPosition( this._targetPos );
+						// this.rigidBody.applyForceToCenter( new Vec2(0, 0), true);
+						// this.rigidBody.linearVelocity = new Vec2(0, 0);
+						// this.rigidBody.sleep();
+						this.stop();
 					}
-					else{
-						// tween
-						this.node.getPosition( this._curPos );
-
-						Vec3.add(this._curPos, this._curPos, this.moveVec3( deltaTime ));
-						this.node.setPosition( this._curPos );
-					}
+					// else{
+					// 	// tween
+					// 	this.node.getPosition( this._curPos );
+					//
+					// 	Vec3.add(this._curPos, this._curPos, this.moveVec3( deltaTime ));
+					// 	this.node.setPosition( this._curPos );
+					// }
 					break;
 				case 'attacking':
 
@@ -210,6 +315,11 @@ export class PlayerController extends Component{
 					break;
 				default:
 					break;
+			}
+
+			if( this.stateRunTime >= this.stateTime ){
+				this.state = '';
+				this.stateRunTime = 0;
 			}
 		}
 	}
