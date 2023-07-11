@@ -1,11 +1,13 @@
 import {_decorator, Component
 	, Vec2
 	, Vec3
+	, Sprite
 	, EventMouse
 	, input, Input
 	, EventKeyboard, KeyCode
 	, Animation
 	, PhysicsSystem2D
+	, PHYSICS_2D_PTM_RATIO
 	, IPhysics2DContact
 	, RigidBody2D, ERigidBody2DType
 	, ConstantForce
@@ -71,11 +73,10 @@ export class PlayerController extends Component{
 
 	rigidBody: RigidBody2D = null
 
-	moveSpeed = 40;
-	moveTime = 0.1;
+	moveSpeed = 6;
+	moveTime = 0.5;
 
-	initX = 0;
-	initY = 0;
+	spriteCom : Sprite = null;
 
 	start(){
 		this.bindEvent();
@@ -91,11 +92,7 @@ export class PlayerController extends Component{
 
 		this.rigidBody = this.node.getComponent( RigidBody2D );
 
-		let initWorldPosition = this.node.getWorldPosition()
-			;
-
-		this.initX = initWorldPosition.x;
-		this.initY = initWorldPosition.y;
+		this.spriteCom = this.node.getComponent( Sprite );
 	}
 
 	setMode(mode: number){
@@ -105,9 +102,9 @@ export class PlayerController extends Component{
 	}
 
 	bindEvent(){
-		if( this.mode === 0 ){
-			input.on(Input.EventType.MOUSE_UP, this.onMouseEvent, this);
-		}
+		input.on(Input.EventType.MOUSE_UP, this.onMouseEvent, this);
+
+		this.node.on(Input.EventType.MOUSE_UP, this.onMouseSelf);
 
 		input.on(Input.EventType.KEY_DOWN, this.onKeyEvent, this);
 		input.on(Input.EventType.KEY_PRESSING, this.onKeyEvent, this);
@@ -131,11 +128,15 @@ export class PlayerController extends Component{
 		}
 	}
 
+	onMouseSelf(event){
+		event.propagationStopped = true;
+	}
+
 	onKeyEvent(event: EventKeyboard){
 		let keyCode = event.keyCode
 			, op = KEY_OP_MAP[this.mode]?.[keyCode]
 			;
-		                    console.log(keyCode)
+
 		if( op ){
 			this[op?.[0]]( op?.[1] );
 		}
@@ -143,7 +144,6 @@ export class PlayerController extends Component{
 
 	onBeginContact(selfCollider: Collider2D, otherCollider: Collider2D, contact: IPhysics2DContact | null){
 		// 只在两个碰撞体开始接触时被调用一次
-		this.state = '';
 		console.log('onBeginContact');
 		this.stop();
 	}
@@ -182,72 +182,52 @@ export class PlayerController extends Component{
 	}
 
     move(position: Vec2){
-		if( this.state ){
+		if( this.state && this.state !== 'moving' ){
 			return ;
 		}
 
-		this.state = 'moving';
-		this.stateTime = this.moveTime;
+		this.stop();
 
-	    let curr = this.node.getPosition()
-		    , x = position.x - this.initX - curr.x
-		    , y = position.y - this.initY - curr.y
-		    , linear = new Vec2()
+		this.state = 'moving';
+
+	    let curr = this.node.getWorldPosition()
+		    , x = position.x - curr.x
+		    , y = position.y - curr.y
+		    , rs = Math.sqrt( Math.pow(x, 2) + Math.pow(y, 2) )
+		    , xSpeed = x / rs * this.moveSpeed
+		    , ySpeed = y / rs * this.moveSpeed
+		    , linear = new Vec2(xSpeed, ySpeed)
 	        ;
+
+		this.stateTime = rs / this.moveSpeed / PHYSICS_2D_PTM_RATIO;
 
 		if( Math.abs(x) > Math.abs(y) ){
 			if( x > 0 ){
 				this.direction = 1; // 左
-
-				linear.x = this.moveSpeed;
 			}
 			else{
 				this.direction = 3; // 右
 
-				linear.x = -this.moveSpeed;
 			}
-
-			linear.y = y / Math.abs( x ) * this.moveSpeed;
 		}
 		else{
 			if( y > 0 ){
 				this.direction = 0; // 上
-
-				linear.y = this.moveSpeed;
 			}
 			else{
 				this.direction = 2; // 下
-
-				linear.y = -this.moveSpeed;
 			}
-
-			linear.x = x / Math.abs( y ) * this.moveSpeed;
 		}
 
 		this.rigidBody.linearVelocity = linear;
-
-	    // linear.add( new Vec2(event.getUILocationX() - this.initX, event.getUILocationY() - this.initY) );
-
-	    // this.node.getPosition( this._curPos );
-	    // this.direction = direction;
-
-		// let v = this.moveVec3( this.moveTime )
-	    //     ;
-
-		// Vec3.add(this._targetPos, this._curPos, v);
-
-	    // this.rigidBody.wakeUp();
-	    // this.rigidBody.applyLinearImpulseToCenter(new Vec2(v.x, v.y), true);
-	    // console.log( this.rigidBody )
-	    // this.rigidBody.wakeUp();
-		// console.log(v.x, v.y)
-	    // this.rigidBody.linearVelocity = new Vec2(v.x, v.y)
-        // console.log(this.rigidBody.linearVelocity)
 	}
 
 	stop(){
 		this.rigidBody.linearVelocity = new Vec2(0, 0);
-		this.rigidBody.angularVelocity = 0;
+
+		this.stateRunTime = 0;
+		this.stateTime = 0;
+		this.state = '';
 	}
 
 	skill(id: number){
@@ -287,25 +267,14 @@ export class PlayerController extends Component{
 
 	update(deltaTime: number){
 		if( this.state ){
-			console.log(deltaTime)
 			this.stateRunTime += deltaTime;
 
 			switch( this.state ){
 				case 'moving':
 					if( this.stateRunTime >= this.stateTime ){
-						// this.node.setPosition( this._targetPos );
-						// this.rigidBody.applyForceToCenter( new Vec2(0, 0), true);
-						// this.rigidBody.linearVelocity = new Vec2(0, 0);
-						// this.rigidBody.sleep();
 						this.stop();
 					}
-					// else{
-					// 	// tween
-					// 	this.node.getPosition( this._curPos );
-					//
-					// 	Vec3.add(this._curPos, this._curPos, this.moveVec3( deltaTime ));
-					// 	this.node.setPosition( this._curPos );
-					// }
+			
 					break;
 				case 'attacking':
 
