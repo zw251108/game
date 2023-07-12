@@ -7,13 +7,13 @@ const
 
 @ccclass('TalentController')
 export class TalentController extends Component{
-	start(){
+    start(){
 
-	}
+    }
 
-	update(deltaTime: number){
+    update(deltaTime: number){
 
-	}
+    }
 }
 
 
